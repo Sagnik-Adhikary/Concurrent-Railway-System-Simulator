@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Train Station Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827;
+            color: #d1d5db;
+        }
+        .zone {
+            border: 2px solid #374151;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            background-color: #1f2937;
+        }
+        .zone-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #9ca3af;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .track-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+        .platform-container {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1rem;
+        }
+        .slot {
+            height: 80px;
+            border: 2px dashed #4b5563;
+            border-radius: 0.5rem;
+            position: relative;
+            transition: background-color 0.3s ease;
+        }
+        .slot-label {
+            position: absolute;
+            top: -1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8rem;
+            color: #6b7280;
+            font-weight: 500;
+        }
+        .train {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            height: 70%;
+            border-radius: 0.375rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: #fff;
+            transition: all 0.5s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .train-id { font-size: 1.1rem; }
+        .train-type { font-size: 0.7rem; opacity: 0.8; }
+        
+        .local-stop { background-color: #1d4ed8; }
+        .express-halt { background-color: #be123c; }
+        .express-pass { background-color: #ca8a04; }
+        
+        .platform-up { background-color: rgba(34, 197, 94, 0.1); }
+        .platform-down { background-color: rgba(239, 68, 68, 0.1); }
+        .platform-mixed { background-color: rgba(168, 85, 247, 0.1); }
+        
+        #log-container {
+            height: 250px;
+            background-color: #000;
+            border: 1px solid #374151;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            font-family: monospace;
+            font-size: 0.875rem;
+            overflow-y: scroll;
+            color: #a7f3d0;
+        }
+        #report-container { max-height: 400px; overflow-y: auto; }
+        th, td { padding: 0.5rem 0.75rem; text-align: left; }
+        thead { position: sticky; top: 0; background-color: #374151; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-white">Train Station Simulator</h1>
+            <div class="flex items-center space-x-4 mt-4 md:mt-0">
+                <div id="clock" class="text-2xl font-semibold bg-gray-900 px-4 py-2 rounded-lg text-cyan-400">12:00:00</div>
+                <button id="start-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors">Start Simulation</button>
+            </div>
+        </div>
+
+        <!-- Waiting Area -->
+        <div class="zone">
+            <h2 class="zone-title">Outside System (Waiting for Approach)</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-semibold text-center mb-2 text-green-400">UP Direction</h3>
+                    <div id="wait-UP" class="min-h-[90px] p-2 bg-black/20 rounded-lg flex flex-wrap gap-2"></div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-center mb-2 text-red-400">DOWN Direction</h3>
+                    <div id="wait-DOWN" class="min-h-[90px] p-2 bg-black/20 rounded-lg flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Approach Zone -->
+        <div class="zone">
+            <h2 class="zone-title">Approach Zone</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-semibold text-center mb-2 text-green-400">UP Tracks (2 lines)</h3>
+                    <div class="track-container" id="approach-UP">
+                        <div class="slot"><div class="slot-label">A-U1</div></div>
+                        <div class="slot"><div class="slot-label">A-U2</div></div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-center mb-2 text-red-400">DOWN Tracks (2 lines)</h3>
+                    <div class="track-container" id="approach-DOWN">
+                         <div class="slot"><div class="slot-label">A-D1</div></div>
+                         <div class="slot"><div class="slot-label">A-D2</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Station Zone -->
+        <div class="zone">
+            <h2 class="zone-title">Station Zone</h2>
+            <!-- UPDATED HTML PLATFORM LAYOUT -->
+            <div class="platform-container" id="station-platforms">
+                <div class="slot platform-up"><div class="slot-label">P1 (UP)</div></div>
+                <div class="slot platform-up"><div class="slot-label">P2 (UP)</div></div>
+                <div class="slot platform-mixed"><div class="slot-label">P3 (MIXED)</div></div>
+                <div class="slot platform-down"><div class="slot-label">P4 (DOWN)</div></div>
+                <div class="slot platform-down"><div class="slot-label">P5 (DOWN)</div></div>
+            </div>
+        </div>
+
+        <!-- Departure Zone -->
+        <div class="zone">
+            <h2 class="zone-title">Departure Zone</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-semibold text-center mb-2 text-green-400">UP Tracks (2 lines)</h3>
+                    <div class="track-container" id="departure-UP">
+                        <div class="slot"><div class="slot-label">D-U1</div></div>
+                        <div class="slot"><div class="slot-label">D-U2</div></div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-center mb-2 text-red-400">DOWN Tracks (2 lines)</h3>
+                    <div class="track-container" id="departure-DOWN">
+                         <div class="slot"><div class="slot-label">D-D1</div></div>
+                         <div class="slot"><div class="slot-label">D-D2</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Log and Report -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div>
+                <h2 class="text-xl font-semibold mb-2">Real-time Log</h2>
+                <div id="log-container"></div>
+            </div>
+            <div>
+                <h2 class="text-xl font-semibold mb-2">Final Performance Report</h2>
+                <div id="report-container" class="bg-gray-800 rounded-lg">
+                    <table class="w-full text-sm">
+                        <thead class="text-xs text-gray-300 uppercase">
+                            <tr>
+                                <th>ID</th><th>Type</th><th>Dir</th><th>Sched Arr</th><th>Sched Dep</th><th>Actual Dock</th><th>Actual Dep</th><th>Delay (min)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-body" class="divide-y divide-gray-700">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+// --- CORE SIMULATION LOGIC ---
+
+const VIRTUAL_START_HOUR = 12;
+const TIME_SCALE = 1000;
+
+let real_start_time;
+let clockInterval;
+
+// --- UTILITY FUNCTIONS ---
+const getElapsedMinutes = () => real_start_time ? (Date.now() - real_start_time) / TIME_SCALE : 0;
+function formatTime(minutes) {
+    const total_seconds = Math.round(minutes * 60);
+    const hour = VIRTUAL_START_HOUR + Math.floor(total_seconds / 3600);
+    const minute = Math.floor((total_seconds % 3600) / 60);
+    const second = total_seconds % 60;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+}
+const sleep = (minutes) => new Promise(resolve => setTimeout(resolve, minutes * TIME_SCALE));
+
+// --- SYNCHRONIZATION PRIMITIVES ---
+class Semaphore {
+    constructor(initialValue) { this.value = initialValue; this.queue = []; }
+    wait() { return new Promise(resolve => { if (this.value > 0) { this.value--; resolve(); } else { this.queue.push(resolve); } }); }
+    post() { if (this.queue.length > 0) { this.queue.shift()(); } else { this.value++; } }
+}
+
+// --- SIMULATION STATE & CONFIGURATION ---
+const state = {
+    approach_lines: { UP: new Semaphore(2), DOWN: new Semaphore(2) },
+    departure_lines: { UP: new Semaphore(2), DOWN: new Semaphore(2) },
+    platforms: Array(5).fill(null),
+    waiting_for_platform: { UP: { true: [], false: [] }, DOWN: { true: [], false: [] } },
+    trains: [],
+    log: [],
+    running: false,
+};
+
+// --- UPDATED JAVASCRIPT PLATFORM LAYOUT ---
+const PLATFORM_MAP = ['UP_ONLY', 'UP_ONLY', 'MIXED', 'DOWN_ONLY', 'DOWN_ONLY'];
+
+// --- UI UPDATE LOGIC ---
+function updateUI() {
+    document.getElementById('clock').textContent = formatTime(getElapsedMinutes());
+    document.querySelectorAll('.slot').forEach(s => { const el = s.querySelector('.train'); if (el) el.remove(); });
+    document.getElementById('wait-UP').innerHTML = ''; document.getElementById('wait-DOWN').innerHTML = '';
+    state.trains.forEach(train => {
+        let parent;
+        switch(train.status) {
+            case 'WAITING_APPROACH': parent = document.getElementById(`wait-${train.direction}`); break;
+            case 'IN_APPROACH': parent = document.getElementById(`approach-${train.direction}`).children[train.slotIndex]; break;
+            case 'AT_PLATFORM': parent = document.getElementById('station-platforms').children[train.slotIndex]; break;
+            case 'IN_DEPARTURE': parent = document.getElementById(`departure-${train.direction}`).children[train.slotIndex]; break;
+        }
+        if (parent) {
+             if (!train.element) {
+                train.element = document.createElement('div');
+                train.element.className = `train ${train.cssClass}`;
+                train.element.innerHTML = `<span class="train-id">${train.id}</span><span class="train-type">${train.behavior.replace('_', ' ')}</span>`;
+             }
+             if(train.status === 'WAITING_APPROACH') {
+                 train.element.style.position = 'relative'; train.element.style.transform = 'none';
+                 train.element.style.width = '80px'; train.element.style.height = '50px';
+             } else { train.element.style.position = 'absolute'; }
+             parent.appendChild(train.element);
+        }
+    });
+    const logContainer = document.getElementById('log-container');
+    logContainer.innerHTML = state.log.join('\n');
+    logContainer.scrollTop = logContainer.scrollHeight;
+}
+function logEvent(message) {
+    const timeStr = formatTime(getElapsedMinutes());
+    state.log.push(`<span>[${timeStr}]</span> ${message}`);
+    if(state.log.length > 100) state.log.shift();
+}
+
+// --- STATION MANAGEMENT LOGIC ---
+const stationManager = {
+    // --- UPDATED FIND PLATFORM LOGIC ---
+    findPlatform(train) {
+        // Check dedicated platforms first
+        for (let i = 0; i < 5; i++) {
+            if (!state.platforms[i] && PLATFORM_MAP[i] === `${train.direction}_ONLY`) {
+                return i;
+            }
+        }
+        // If no dedicated platform is free, check for a mixed one
+        for (let i = 0; i < 5; i++) {
+            if (!state.platforms[i] && PLATFORM_MAP[i] === 'MIXED') {
+                return i;
+            }
+        }
+        return -1;
+    },
+    requestPlatform(train) { /* ... same as before ... */ 
+        return new Promise(resolve => {
+            const isExpress = train.behavior !== 'LOCAL_STOP';
+            state.waiting_for_platform[train.direction][isExpress].push({ train, resolve });
+            this.scheduleNextTrain();
+        });
+    },
+    releasePlatform(platformIndex) { /* ... same as before ... */ 
+        state.platforms[platformIndex] = null;
+        this.scheduleNextTrain();
+    },
+    scheduleNextTrain() { /* ... same as before ... */ 
+        const directions = ['UP', 'DOWN'];
+        for (const dir of directions) {
+            if (state.waiting_for_platform[dir].true.length > 0) {
+                const platformIndex = this.findPlatform({ direction: dir });
+                if (platformIndex !== -1) {
+                    const { train, resolve } = state.waiting_for_platform[dir].true.shift();
+                    state.platforms[platformIndex] = train;
+                    resolve(platformIndex); return;
+                }
+            }
+        }
+        for (const dir of directions) {
+            if (state.waiting_for_platform[dir].true.length === 0 && state.waiting_for_platform[dir].false.length > 0) {
+                const platformIndex = this.findPlatform({ direction: dir });
+                if (platformIndex !== -1) {
+                    const { train, resolve } = state.waiting_for_platform[dir].false.shift();
+                    state.platforms[platformIndex] = train;
+                    resolve(platformIndex); return;
+                }
+            }
+        }
+    }
+};
+
+// --- TRAIN LOGIC ---
+async function trainLogic(train) {
+    train.status = 'WAITING_APPROACH';
+    await state.approach_lines[train.direction].wait();
+    train.time_entered_approach = getElapsedMinutes();
+    train.status = 'IN_APPROACH';
+    train.slotIndex = [...document.getElementById(`approach-${train.direction}`).children].findIndex(s => !s.querySelector('.train'));
+    logEvent(`Train ${train.id} (${train.direction} ${train.behavior.replace('_',' ')}) -> Entered APPROACH zone.`);
+    await sleep(1);
+    logEvent(`Train ${train.id} -> Arrived at station, needs platform.`);
+    const platformIndex = await stationManager.requestPlatform(train);
+    state.approach_lines[train.direction].post();
+    train.status = 'AT_PLATFORM';
+    train.slotIndex = platformIndex;
+    train.time_docked = getElapsedMinutes();
+    logEvent(`✅ Train ${train.id} -> DOCKED on Platform ${platformIndex + 1}. (Approach line freed)`);
+    const haltDuration = train.behavior === 'EXPRESS_HALT' ? 10 : (train.behavior === 'LOCAL_STOP' ? 2 : 1);
+    await sleep(haltDuration);
+    if (getElapsedMinutes() < train.scheduled_departure_min) {
+        const waitNeeded = train.scheduled_departure_min - getElapsedMinutes();
+        logEvent(`Train ${train.id} -> Finished halt, waiting ${waitNeeded.toFixed(1)} min for scheduled departure.`);
+        await sleep(waitNeeded);
+    }
+    await state.departure_lines[train.direction].wait();
+    train.time_entered_departure = getElapsedMinutes();
+    stationManager.releasePlatform(platformIndex);
+    train.status = 'IN_DEPARTURE';
+    train.slotIndex = [...document.getElementById(`departure-${train.direction}`).children].findIndex(s => !s.querySelector('.train'));
+    logEvent(`Train ${train.id} -> Left platform, entered DEPARTURE zone.`);
+    await sleep(1);
+    state.departure_lines[train.direction].post();
+    train.actual_departure = getElapsedMinutes();
+    train.status = 'EXITED';
+    logEvent(`Train ${train.id} -> Exited system.`);
+}
+
+// --- MAIN SIMULATION ---
+function generateSchedule() {
+    const baseSchedule = [
+        {id: 1, direction: 'UP', behavior: 'LOCAL_STOP', eta: 1}, {id: 2, direction: 'DOWN', behavior: 'EXPRESS_HALT', eta: 2},
+        {id: 3, direction: 'UP', behavior: 'EXPRESS_PASS', eta: 3}, {id: 4, direction: 'DOWN', behavior: 'LOCAL_STOP', eta: 4},
+        {id: 5, direction: 'UP', behavior: 'EXPRESS_HALT', eta: 4}, {id: 6, direction: 'DOWN', behavior: 'EXPRESS_HALT', eta: 5},
+        {id: 7, direction: 'UP', behavior: 'LOCAL_STOP', eta: 5}, {id: 8, direction: 'DOWN', behavior: 'LOCAL_STOP', eta: 6},
+        {id: 9, direction: 'UP', behavior: 'EXPRESS_HALT', eta: 7}, {id: 10, direction: 'UP', behavior: 'LOCAL_STOP', eta: 8},
+        {id: 11, direction: 'DOWN', behavior: 'EXPRESS_PASS', eta: 9}, {id: 12, direction: 'DOWN', behavior: 'LOCAL_STOP', eta: 10}
+    ];
+    return baseSchedule.map(t => {
+        const halt = t.behavior === 'EXPRESS_HALT' ? 10 : (t.behavior === 'LOCAL_STOP' ? 2 : 1);
+        return { ...t, scheduled_arrival_min: t.eta, scheduled_departure_min: t.eta + halt, status: 'SCHEDULED', cssClass: t.behavior.toLowerCase().replace('_', '-'), element: null, slotIndex: -1 };
+    });
+}
+function displayReport() {
+    const tbody = document.getElementById('report-body');
+    tbody.innerHTML = '';
+    state.trains.forEach(t => {
+        const totalDelay = t.actual_departure - t.scheduled_departure_min;
+        tbody.innerHTML += `
+            <tr>
+                <td class="font-semibold">${t.id}</td><td>${t.behavior.replace('_', ' ')}</td><td>${t.direction}</td>
+                <td>${formatTime(t.scheduled_arrival_min)}</td><td>${formatTime(t.scheduled_departure_min)}</td>
+                <td>${formatTime(t.time_docked)}</td><td>${formatTime(t.actual_departure)}</td>
+                <td class="${totalDelay > 0.1 ? 'text-red-400' : 'text-green-400'}">${totalDelay.toFixed(1)} ${totalDelay > 0.1 ? '(DELAYED)' : ''}</td>
+            </tr>`;
+    });
+}
+async function runSimulation() {
+    if (state.running) return;
+    state.running = true;
+    const startButton = document.getElementById('start-button');
+    startButton.disabled = true; startButton.textContent = 'Running...';
+    real_start_time = Date.now();
+    state.trains = generateSchedule();
+    state.log = [];
+    document.getElementById('report-body').innerHTML = '';
+    clockInterval = setInterval(updateUI, 100);
+    logEvent('Station system is online. Dispatching trains...');
+    const trainPromises = [];
+    while (trainPromises.length < state.trains.length) {
+        state.trains.forEach(train => {
+            if (train.status === 'SCHEDULED' && getElapsedMinutes() >= train.scheduled_arrival_min) {
+                trainPromises.push(trainLogic(train));
+                train.status = 'DISPATCHED';
+            }
+        });
+        await new Promise(r => setTimeout(r, 100));
+    }
+    await Promise.all(trainPromises);
+    clearInterval(clockInterval);
+    updateUI();
+    logEvent('All trains have completed their journeys. Station is closing.');
+    displayReport();
+    startButton.disabled = false; startButton.textContent = 'Restart Simulation';
+    state.running = false;
+}
+
+document.getElementById('start-button').addEventListener('click', runSimulation);
+</script>
+</body>
+</html>
