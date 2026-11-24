@@ -232,6 +232,8 @@ class Semaphore {
 const state = {
     approach_lines: { UP: new Semaphore(2), DOWN: new Semaphore(2) },
     departure_lines: { UP: new Semaphore(2), DOWN: new Semaphore(2) },
+    approach_slots: { UP: [null, null], DOWN: [null, null] },
+    departure_slots: { UP: [null, null], DOWN: [null, null] },
     platforms: Array(5).fill(null),
     waiting_for_platform: { UP: { true: [], false: [] }, DOWN: { true: [], false: [] } },
     trains: [],
@@ -250,6 +252,7 @@ function updateUI() {
     state.trains.forEach(train => {
         let parent;
         switch(train.status) {
+            case 'SCHEDULED':
             case 'WAITING_APPROACH': parent = document.getElementById(`wait-${train.direction}`); break;
             case 'IN_APPROACH': parent = document.getElementById(`approach-${train.direction}`).children[train.slotIndex]; break;
             case 'AT_PLATFORM': parent = document.getElementById('station-platforms').children[train.slotIndex]; break;
@@ -261,10 +264,23 @@ function updateUI() {
                 train.element.className = `train ${train.cssClass}`;
                 train.element.innerHTML = `<span class="train-id">${train.id}</span><span class="train-type">${train.behavior.replace('_', ' ')}</span>`;
              }
-             if(train.status === 'WAITING_APPROACH') {
-                 train.element.style.position = 'relative'; train.element.style.transform = 'none';
-                 train.element.style.width = '80px'; train.element.style.height = '50px';
-             } else { train.element.style.position = 'absolute'; }
+             if (train.status === 'SCHEDULED' || train.status === 'WAITING_APPROACH') {
+                 train.element.style.position = 'relative';
+                 train.element.style.top = 'auto';
+                 train.element.style.left = 'auto';
+                 train.element.style.transform = 'none';
+                 train.element.style.width = '105px';
+                 train.element.style.height = '54px';
+                 train.element.style.opacity = train.status === 'SCHEDULED' ? '0.6' : '1';
+             } else {
+                 train.element.style.position = 'absolute';
+                 train.element.style.top = '';
+                 train.element.style.left = '';
+                 train.element.style.transform = '';
+                 train.element.style.width = '';
+                 train.element.style.height = '';
+                 train.element.style.opacity = '';
+             }
              parent.appendChild(train.element);
         }
     });
@@ -335,14 +351,20 @@ const stationManager = {
 // --- TRAIN LOGIC ---
 async function trainLogic(train) {
     train.status = 'WAITING_APPROACH';
+    if (state.approach_lines[train.direction].value === 0) {
+        logEvent(`Train ${train.id} (${train.direction} ${train.behavior.replace('_',' ')}) -> Approach tracks full, waiting outside system.`);
+    }
     await state.approach_lines[train.direction].wait();
     train.time_entered_approach = getElapsedMinutes();
+    const approachSlot = state.approach_slots[train.direction].indexOf(null);
+    state.approach_slots[train.direction][approachSlot] = train;
     train.status = 'IN_APPROACH';
-    train.slotIndex = [...document.getElementById(`approach-${train.direction}`).children].findIndex(s => !s.querySelector('.train'));
+    train.slotIndex = approachSlot;
     logEvent(`Train ${train.id} (${train.direction} ${train.behavior.replace('_',' ')}) -> Entered APPROACH zone.`);
     await sleep(1);
     logEvent(`Train ${train.id} -> Arrived at station, needs platform.`);
     const platformIndex = await stationManager.requestPlatform(train);
+    state.approach_slots[train.direction][approachSlot] = null;
     state.approach_lines[train.direction].post();
     train.status = 'AT_PLATFORM';
     train.slotIndex = platformIndex;
@@ -358,10 +380,13 @@ async function trainLogic(train) {
     await state.departure_lines[train.direction].wait();
     train.time_entered_departure = getElapsedMinutes();
     stationManager.releasePlatform(platformIndex);
+    const departureSlot = state.departure_slots[train.direction].indexOf(null);
+    state.departure_slots[train.direction][departureSlot] = train;
     train.status = 'IN_DEPARTURE';
-    train.slotIndex = [...document.getElementById(`departure-${train.direction}`).children].findIndex(s => !s.querySelector('.train'));
+    train.slotIndex = departureSlot;
     logEvent(`Train ${train.id} -> Left platform, entered DEPARTURE zone.`);
     await sleep(1);
+    state.departure_slots[train.direction][departureSlot] = null;
     state.departure_lines[train.direction].post();
     train.actual_departure = getElapsedMinutes();
     train.status = 'EXITED';
@@ -403,17 +428,20 @@ async function runSimulation() {
     const startButton = document.getElementById('start-button');
     startButton.disabled = true; startButton.textContent = 'Running...';
     real_start_time = Date.now();
+    state.approach_slots = { UP: [null, null], DOWN: [null, null] };
+    state.departure_slots = { UP: [null, null], DOWN: [null, null] };
     state.trains = generateSchedule();
     state.log = [];
     document.getElementById('report-body').innerHTML = '';
+    updateUI();
     clockInterval = setInterval(updateUI, 100);
     logEvent('Station system is online. Dispatching trains...');
     const trainPromises = [];
     while (trainPromises.length < state.trains.length) {
         state.trains.forEach(train => {
             if (train.status === 'SCHEDULED' && getElapsedMinutes() >= train.scheduled_arrival_min) {
-                trainPromises.push(trainLogic(train));
                 train.status = 'DISPATCHED';
+                trainPromises.push(trainLogic(train));
             }
         });
         await new Promise(r => setTimeout(r, 100));
